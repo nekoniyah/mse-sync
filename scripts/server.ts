@@ -1,88 +1,135 @@
-import { Server } from "socket.io";
-import http from "http";
-import fs from "fs";
-import IOClient from "socket.io-client";
-import path from "path";
+// scripts/server.ts
+import { WebSocketServer, WebSocket } from "ws";
+import { createServer } from "http";
+import { Server as SocketIOServer } from "socket.io";
+import chalk from "chalk";
 
-const peersFilePath = path.join(__dirname, "..", "config", "peers.txt");
-const portFilePath = path.join(__dirname, "..", "config", "port.txt");
-const setsFilePath = path.join(__dirname, "..", "config", "sets.txt");
-
-if (!fs.existsSync(peersFilePath)) fs.writeFileSync(peersFilePath, "");
-if (!fs.existsSync(portFilePath)) fs.writeFileSync(portFilePath, "1000");
-if (!fs.existsSync(setsFilePath)) fs.writeFileSync(setsFilePath, "");
-
-const sets = fs
-    .readFileSync(setsFilePath, "utf-8")
-    .split("\n")
-    .map((line) => [line.split("::")[0], ...line.split("::")[1]!.split("=")])
-    .map(([n, filepath, hosts]) => [n, filepath, hosts!.split(",")]) as [
-    string,
-    string,
-    string[]
-][];
-
-const port = fs.readFileSync(portFilePath, "utf-8");
-const peers = fs
-    .readFileSync(peersFilePath, "utf-8")
-    .split("\n")
-    .map((line) => line.trim());
-
-const app = http.createServer();
-const io = new Server(app);
-
-const connections = new Map();
-
-export default async function init() {
-    io.on("connection", (socket) => {
-        console.log("🔗 Peer connected");
-
-        socket.on("update", (n: string, content: string) => {
-            sets.forEach(([set, filepath]) => {
-                if (set === n) {
-                    fs.writeFileSync(filepath, content);
-                    return;
-                }
-            });
-        });
-    });
-
-    async function createConnection(host: string) {
-        const socket = IOClient(`http://${host}:${port}`);
-
-        socket.on("connect", () => {
-            console.log("🔗 Peer connected");
-            connections.set(host, socket);
-        });
-
-        socket.on("disconnect", () => {
-            console.log("🔗 Peer disconnected");
-            connections.delete(host);
-        });
-    }
-
-    peers.forEach(createConnection);
-
-    async function updatePeers(newPeers: string[]) {
-        fs.writeFileSync(peersFilePath, newPeers.join("\n"));
-        connections.clear();
-        newPeers.forEach(createConnection);
-    }
-
-    fs.watchFile(peersFilePath, () => updatePeers(peers));
-
-    // sets.forEach(async ([n, filepath, hosts]) => {
-    //     await watchFile(filepath, async (content) => {
-    //         console.log(`Sending update to ${hosts.join(", ")} for set ${n}`);
-    //         hosts.forEach((host) => {
-    //             if (connections.has(host)) {
-    //                 connections.get(host)!.emit("update", n, content);
-    //             }
-    //         });
-
-    //         await restartServer();
-    //     });
-    // });
+interface PeerInfo {
+    id: string;
+    lastSeen: number;
+    files: Map<string, string>; // filename -> hash
 }
 
-export { io, connections, app, port };
+export class SyncServer {
+    private wss: WebSocketServer;
+    private io: SocketIOServer;
+    private peers: Map<string, PeerInfo> = new Map();
+
+    constructor(port: number = 3000) {
+        const httpServer = createServer();
+
+        this.wss = new WebSocketServer({ server: httpServer });
+        this.io = new SocketIOServer(httpServer, {
+            cors: { origin: "*" },
+        });
+
+        this.setupWebSocket();
+        this.setupDashboard();
+        this.startHeartbeat();
+
+        httpServer.listen(port, () => {
+            console.log(chalk.green(`MSE-Sync server running on port ${port}`));
+        });
+    }
+
+    private setupWebSocket() {
+        this.wss.on("connection", (ws, req) => {
+            const peerId = req.headers["x-peer-id"] as string;
+
+            if (!peerId) {
+                ws.close();
+                return;
+            }
+
+            this.peers.set(peerId, {
+                id: peerId,
+                lastSeen: Date.now(),
+                files: new Map(),
+            });
+
+            console.log(chalk.green(`Peer connected: ${peerId}`));
+            this.broadcastPeerList();
+
+            ws.on("message", (data) => {
+                const message = JSON.parse(data.toString());
+                this.handlePeerMessage(peerId, message);
+
+                // Broadcast to other peers
+                this.wss.clients.forEach((client) => {
+                    if (client !== ws && client.readyState === WebSocket.OPEN) {
+                        client.send(data);
+                    }
+                });
+            });
+
+            ws.on("close", () => {
+                this.peers.delete(peerId);
+                this.broadcastPeerList();
+                console.log(chalk.yellow(`Peer disconnected: ${peerId}`));
+            });
+        });
+    }
+
+    private setupDashboard() {
+        this.io.on("connection", (socket) => {
+            console.log(chalk.blue(`Dashboard connected: ${socket.id}`));
+            this.sendDashboardUpdate();
+
+            socket.on("disconnect", () => {
+                console.log(
+                    chalk.yellow(`Dashboard disconnected: ${socket.id}`)
+                );
+            });
+        });
+    }
+
+    private handlePeerMessage(peerId: string, message: any) {
+        const peer = this.peers.get(peerId);
+        if (!peer) return;
+
+        peer.lastSeen = Date.now();
+
+        if (message.filename && message.fileHash) {
+            peer.files.set(message.filename, message.fileHash);
+        }
+
+        this.sendDashboardUpdate();
+    }
+
+    private broadcastPeerList() {
+        const peerList = Array.from(this.peers.values()).map((peer) => ({
+            id: peer.id,
+            lastSeen: peer.lastSeen,
+            files: Array.from(peer.files.entries()),
+        }));
+
+        this.io.emit("peers", peerList);
+    }
+
+    private sendDashboardUpdate() {
+        const update = {
+            peers: Array.from(this.peers.values()).map((peer) => ({
+                id: peer.id,
+                lastSeen: peer.lastSeen,
+                files: Array.from(peer.files.entries()),
+            })),
+            timestamp: Date.now(),
+        };
+
+        this.io.emit("dashboard-update", update);
+    }
+
+    private startHeartbeat() {
+        setInterval(() => {
+            const now = Date.now();
+            for (const [peerId, peer] of this.peers.entries()) {
+                if (now - peer.lastSeen > 30000) {
+                    // 30 seconds timeout
+                    this.peers.delete(peerId);
+                    console.log(chalk.yellow(`Peer timed out: ${peerId}`));
+                }
+            }
+            this.broadcastPeerList();
+        }, 10000);
+    }
+}

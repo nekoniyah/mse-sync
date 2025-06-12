@@ -1,88 +1,48 @@
-import fs from "fs";
-import { program } from "commander";
-
+// index.ts - Main entry point
+import { Command } from "commander";
+import { SyncServer } from "./scripts/server";
+import { SyncClient } from "./scripts/client";
+import { Config } from "./scripts/config";
 import chalk from "chalk";
-import { ChildProcess, spawn } from "child_process";
-import path from "path";
+import { existsSync, mkdirSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
 
-if (!fs.existsSync("./config")) fs.mkdirSync("./config");
+if (!existsSync(join(homedir(), ".mse-sync"))) {
+    mkdirSync(join(homedir(), ".mse-sync"));
+}
 
-if (!fs.existsSync("./config/peers.txt"))
-    fs.writeFileSync("./config/peers.txt", "");
-
-const peers = fs.readFileSync("./config/peers.txt", "utf-8");
-
-let programName = process.argv[0]!;
-
-program.name("mse-sync").description("Interface Sync P2P MSE").version("0.0.1");
-
-program.command("add-peer [host]").action(() => {
-    if (!process.argv[3]) throw new Error("Missing host");
-
-    fs.writeFileSync("./config/peers.txt", peers + "\n" + process.argv[3]);
-});
-program.command("remove-peer [host]").action(() => {
-    if (!process.argv[3]) throw new Error("Missing host");
-
-    const newPeers = peers
-        .split("\n")
-        .filter((peer) => peer !== process.argv[3])
-        .join("\n");
-    fs.writeFileSync("./config/peers.txt", newPeers);
-});
-
-program.command("stop").action(() => {
-    const pid = fs.readFileSync("./running_pid", "utf-8");
-    console.log(`Stopping server with pid ${pid}`);
-    process.kill(parseInt(pid), "SIGKILL");
-
-    console.log("Server stopped");
-});
-
-program.command("start").action(() => {
-    let s: ChildProcess = spawn(programName, ["run", "./scripts/run.ts"], {
-        stdio: "inherit",
-        cwd: process.cwd(),
-        detached: true,
+if (!existsSync(Config.CONFIG_PATH))
+    Config.save({
+        watchPath: join(homedir(), "Documents", "Magic Set Editor", "Sets"),
+        serverUrl: "ws://localhost:3000",
     });
 
-    s.on("spawn", () => {
-        s.unref();
+const program = new Command();
+
+program
+    .name("mse-sync")
+    .description("Magic Set Editor file synchronization tool")
+    .version("1.0.0");
+
+program
+    .command("start")
+    .description("Start MSE-Sync client")
+    .action(async () => {
+        const config = await Config.load();
+        const client = new SyncClient(config.serverUrl, config.watchPath);
+        console.log(
+            chalk.green(
+                `MSE-Sync client started. Watching: ${config.watchPath}`
+            )
+        );
     });
 
-    console.log(`Successfully started server on ws://localhost:1000`);
-    console.log(
-        chalk.green(
-            `Successfully connected to peers: ${peers
-                .split("\n")
-                .map((peer) => chalk.bold(peer))
-                .join(", ")}`
-        )
-    );
-    console.log(`You may stop the server by running ${programName} stop`);
-
-    fs.writeFileSync("./running_pid", `${s.pid}`);
-});
-
-program.command("add-set [set]").action(() => {
-    if (!process.argv[3]) throw new Error("Missing set");
-
-    let setpath = process.argv[3].trim().replace(/\\/g, "/");
-
-    if (!setpath.startsWith("./")) setpath = path.join(process.cwd(), setpath);
-    else if (!setpath.startsWith("/"))
-        setpath = path.join(process.cwd(), setpath);
-    else setpath = setpath;
-
-    const lineCount = fs
-        .readFileSync("./config/sets.txt", "utf-8")
-        .split("\n")
-        .filter((line) => line !== "").length;
-
-    fs.writeFileSync(
-        "./config/sets.txt",
-        `${lineCount + 1}::${setpath}=${peers.split("\n").join(",")}`
-    );
-});
+program
+    .command("server")
+    .description("Start MSE-Sync server")
+    .action(() => {
+        new SyncServer();
+    });
 
 program.parse();

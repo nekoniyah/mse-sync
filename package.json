@@ -1,29 +1,24 @@
 {
+    "name": "mse-sync",
+    "version": "1.0.0",
+    "description": "Magic Set Editor file synchronization tool",
+    "main": "index.js",
+    "scripts": {
+        "start": "bun index.ts start",
+        "server": "bun index.ts server",
+        "install-windows": "./installer.bat"
+    },
     "dependencies": {
-        "chalk": "^5.4.1",
-        "commander": "^14.0.0",
-        "jszip": "^3.10.1",
-        "socket.io": "^4.8.1",
-        "socket.io-client": "^4.8.1",
-        "ws": "^8.18.2"
+        "chalk": "^4.1.2",
+        "commander": "^8.3.0",
+        "jszip": "^3.7.1",
+        "socket.io": "^4.4.1",
+        "ws": "^8.2.3"
     },
     "devDependencies": {
-        "@types/ws": "^8.18.1",
-        "@types/bun": "latest"
-    },
-    "name": "mse-sync",
-    "module": "index.ts",
-    "type": "module",
-    "private": true,
-    "peerDependencies": {
-        "typescript": "^5"
-    },
-    "scripts": {
-        "start": "bun run ./index.ts start",
-        "stop": "bun run ./index.ts stop",
-        "serve": "bun run ./scripts/server.ts",
-        "add-peer": "bun run ./index.ts add-peer",
-        "remove-peer": "bun run ./index.ts remove-peer",
-        "add-set": "bun run ./index.ts add-set"
+        "@types/node": "^16.11.7",
+        "@types/ws": "^8.2.0",
+        "ts-node": "^10.4.0",
+        "typescript": "^4.5.2"
     }
 }

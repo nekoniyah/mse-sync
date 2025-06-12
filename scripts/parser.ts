@@ -1,57 +1,73 @@
-import * as fs from "fs";
+// scripts/parser.ts
+import { readFile } from "fs/promises";
+import JSZip from "jszip";
 
-type MSECard = {
-    name?: string;
-    [key: string]: string | undefined;
-};
-type MSESet = {
-    cards: MSECard[];
+export interface MSECard {
+    id: string;
+    name: string;
+    style: string;
+    notes: string;
+    timestamp: number;
     [key: string]: any;
-};
+}
 
-function parseMSEFile(filepath: string): MSESet {
-    const text = fs.readFileSync(filepath, "utf8");
-    const lines = text.split(/\\r?\\n/);
-    const cards: MSECard[] = [];
-    let card: MSECard = {};
+export class MSEParser {
+    static async parseFile(filePath: string): Promise<MSECard[]> {
+        const content = await readFile(filePath);
+        const zip = await JSZip.loadAsync(content);
+        const setFile = zip.file("set");
 
-    for (let line of lines) {
-        // Detect new card
-        if (line.trim() === "" && Object.keys(card).length > 0) {
-            cards.push(card);
-            card = {};
-            continue;
+        if (!setFile) {
+            throw new Error("Invalid MSE set file: missing set file");
         }
 
-        // Key: Value
-        const match = line.match(/^([^:]+):\\s*(.*)$/);
-        if (match) {
-            const [_, key, value] = match as [string, string, string];
-            card[key.trim().toLowerCase()] = value.trim();
-        }
+        const setText = await setFile.async("text");
+        return this.parseSetContent(setText);
     }
-    if (Object.keys(card).length > 0) cards.push(card);
 
-    return { cards };
-}
+    private static parseSetContent(content: string): MSECard[] {
+        const cards: MSECard[] = [];
+        const cardBlocks = content.split("card:").slice(1); // Skip header
 
-function cardsToMTGJson(set: MSESet): any {
-    // Very basic; extend with as much as you want!
-    return {
-        cards: set.cards.map((card) => ({
+        for (const block of cardBlocks) {
+            const card = this.parseCardBlock(block);
+            if (card) {
+                cards.push(card);
+            }
+        }
+
+        return cards;
+    }
+
+    private static parseCardBlock(block: string): MSECard | null {
+        const lines = block.trim().split("\n");
+        const card: any = {
+            timestamp: Date.now(),
+        };
+
+        for (const line of lines) {
+            const [key, ...valueParts] = line.trim().split(":");
+            if (!key) continue;
+
+            const value = valueParts.join(":").trim();
+            card[key.trim()] = value;
+        }
+
+        if (!card.card_id || !card.name) return null;
+
+        return {
+            id: card.card_id,
             name: card.name,
-            manaCost: card["casting cost"] ?? undefined,
-            type: card["type"] ?? undefined,
-            text: card["rule text"] ?? undefined,
-            power: card["power"] ?? undefined,
-            toughness: card["toughness"] ?? undefined,
-            artist: card["illustrator"] ?? undefined,
-        })),
-        meta: {
-            date: new Date().toISOString().slice(0, 10),
-        },
-    };
-}
+            style: card.styling || "",
+            notes: card.notes || "",
+            timestamp: card.timestamp,
+            ...card,
+        };
+    }
 
-// For library usage:
-export { parseMSEFile, cardsToMTGJson };
+    static async buildSetFile(cards: MSECard[]): Promise<Buffer> {
+        // Implementation for rebuilding MSE set file
+        // This would require detailed knowledge of the MSE file format
+        throw new Error("Not implemented");
+    }
+}

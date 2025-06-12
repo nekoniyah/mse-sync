@@ -4,7 +4,9 @@ import { program } from "commander";
 import chalk from "chalk";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
-// logs
+
+if (!fs.existsSync("./config/peers.txt"))
+    fs.writeFileSync("./config/peers.txt", "");
 
 const peers = fs.readFileSync("./config/peers.txt", "utf-8");
 

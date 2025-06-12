@@ -3,8 +3,6 @@ import http from "http";
 import fs from "fs";
 import IOClient from "socket.io-client";
 import path from "path";
-import { watchFile } from "./watch";
-import restartServer from "./restart-server";
 
 const peersFilePath = path.join(__dirname, "..", "config", "peers.txt");
 const portFilePath = path.join(__dirname, "..", "config", "port.txt");
@@ -35,53 +33,56 @@ const io = new Server(app);
 
 const connections = new Map();
 
-io.on("connection", (socket) => {
-    console.log("🔗 Peer connected");
-
-    socket.on("update", (n: string, content: string) => {
-        sets.forEach(([set, filepath]) => {
-            if (set === n) {
-                fs.writeFileSync(filepath, content);
-                return;
-            }
-        });
-    });
-});
-
-export async function createConnection(host: string) {
-    const socket = IOClient(`http://${host}:${port}`);
-
-    socket.on("connect", () => {
+export default async function init() {
+    io.on("connection", (socket) => {
         console.log("🔗 Peer connected");
-        connections.set(host, socket);
+
+        socket.on("update", (n: string, content: string) => {
+            sets.forEach(([set, filepath]) => {
+                if (set === n) {
+                    fs.writeFileSync(filepath, content);
+                    return;
+                }
+            });
+        });
     });
 
-    socket.on("disconnect", () => {
-        console.log("🔗 Peer disconnected");
-        connections.delete(host);
-    });
-}
+    async function createConnection(host: string) {
+        const socket = IOClient(`http://${host}:${port}`);
 
-peers.forEach(createConnection);
-
-async function updatePeers(newPeers: string[]) {
-    fs.writeFileSync(peersFilePath, newPeers.join("\n"));
-    connections.clear();
-    newPeers.forEach(createConnection);
-}
-
-fs.watchFile(peersFilePath, () => updatePeers(peers));
-
-sets.forEach(async ([n, filepath, hosts]) => {
-    await watchFile(filepath, async (content) => {
-        hosts.forEach((host) => {
-            if (connections.has(host)) {
-                connections.get(host)!.emit("update", n, content);
-            }
+        socket.on("connect", () => {
+            console.log("🔗 Peer connected");
+            connections.set(host, socket);
         });
 
-        await restartServer();
-    });
-});
+        socket.on("disconnect", () => {
+            console.log("🔗 Peer disconnected");
+            connections.delete(host);
+        });
+    }
+
+    peers.forEach(createConnection);
+
+    async function updatePeers(newPeers: string[]) {
+        fs.writeFileSync(peersFilePath, newPeers.join("\n"));
+        connections.clear();
+        newPeers.forEach(createConnection);
+    }
+
+    fs.watchFile(peersFilePath, () => updatePeers(peers));
+
+    // sets.forEach(async ([n, filepath, hosts]) => {
+    //     await watchFile(filepath, async (content) => {
+    //         console.log(`Sending update to ${hosts.join(", ")} for set ${n}`);
+    //         hosts.forEach((host) => {
+    //             if (connections.has(host)) {
+    //                 connections.get(host)!.emit("update", n, content);
+    //             }
+    //         });
+
+    //         await restartServer();
+    //     });
+    // });
+}
 
 export { io, connections, app, port };

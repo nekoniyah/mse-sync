@@ -7,7 +7,7 @@ export async function watchFile(
     callback: (content: string) => Promise<void> | void
 ) {
     fs.watchFile(targetFile, async (curr, prev) => {
-        if (curr.mtime > prev.mtime) {
+        if (curr.size !== prev.size) {
             await callback(fs.readFileSync(targetFile, "utf-8"));
         } else {
             console.log("No changes detected");

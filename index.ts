@@ -4,12 +4,11 @@ import { program } from "commander";
 import chalk from "chalk";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
+// logs
 
 const peers = fs.readFileSync("./config/peers.txt", "utf-8");
 
 let programName = process.argv[0]!;
-
-if (programName.includes("bun.exe")) programName = "bun run";
 
 program.name("mse-sync").description("Interface Sync P2P MSE").version("0.0.1");
 
@@ -37,21 +36,15 @@ program.command("stop").action(() => {
 });
 
 program.command("start").action(() => {
-    let s: ChildProcess;
-    if (programName === "bun run") {
-        s = spawn("bun", ["run", "./scripts/run.ts"], {
-            detached: true,
-            stdio: "ignore",
-        });
-    } else {
-        s = spawn(`${process.cwd()}/scripts/run.exe`, {
-            detached: true,
-            stdio: "ignore",
-        });
-    }
+    let s: ChildProcess = spawn(programName, ["run", "./scripts/run.ts"], {
+        stdio: "inherit",
+        cwd: process.cwd(),
+        detached: true,
+    });
 
-    s.unref();
-    fs.writeFileSync("./running_pid", `${s.pid}`);
+    s.on("spawn", () => {
+        s.unref();
+    });
 
     console.log(`Successfully started server on ws://localhost:1000`);
     console.log(
@@ -63,6 +56,8 @@ program.command("start").action(() => {
         )
     );
     console.log(`You may stop the server by running ${programName} stop`);
+
+    fs.writeFileSync("./running_pid", `${s.pid}`);
 });
 
 program.command("add-set [set]").action(() => {

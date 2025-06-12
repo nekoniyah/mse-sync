@@ -5,6 +5,8 @@ import chalk from "chalk";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
 
+if (!fs.existsSync("./config")) fs.mkdirSync("./config");
+
 if (!fs.existsSync("./config/peers.txt"))
     fs.writeFileSync("./config/peers.txt", "");
 

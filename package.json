@@ -1,6 +1,6 @@
 {
     "name": "mse-sync",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Magic Set Editor file synchronization tool",
     "main": "index.js",
     "dependencies": {

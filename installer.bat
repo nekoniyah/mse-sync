@@ -8,13 +8,3 @@ powershell -c "irm bun.sh/install.ps1 | iex"
 :: Install dependencies
 echo Installing dependencies...
 bun i
-
-
-:: Create startup shortcut
-echo Creating startup shortcut...
-powershell -Command "$WshShell = New-Object -comObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%USERPROFILE%\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\MSE-Sync.lnk'); $Shortcut.TargetPath = 'bun.exe'; $Shortcut.Arguments = 'index.ts start'; $Shortcut.WorkingDirectory = '%CD%'; $Shortcut.Save()"
-
-echo Installation complete!
-echo MSE-Sync will start automatically with Windows.
-echo You can also start it manually by running: npm start
-pause

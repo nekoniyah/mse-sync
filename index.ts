@@ -1,48 +1,49 @@
-// index.ts - Main entry point
+// index.ts
 import { Command } from "commander";
-import { SyncServer } from "./scripts/server";
-import { SyncClient } from "./scripts/client";
-import { Config } from "./scripts/config";
+import { P2PClient } from "./scripts/p2p-client";
 import chalk from "chalk";
-import { existsSync, mkdirSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
-
-if (!existsSync(join(homedir(), ".mse-sync"))) {
-    mkdirSync(join(homedir(), ".mse-sync"));
-}
-
-if (!existsSync(Config.CONFIG_PATH))
-    Config.save({
-        watchPath: join(homedir(), "Documents", "Magic Set Editor", "Sets"),
-        serverUrl: "ws://localhost:3000",
-    });
 
 const program = new Command();
 
 program
     .name("mse-sync")
-    .description("Magic Set Editor file synchronization tool")
+    .description("P2P MSE file synchronization tool")
     .version("1.0.0");
 
 program
     .command("start")
-    .description("Start MSE-Sync client")
-    .action(async () => {
-        const config = await Config.load();
-        const client = new SyncClient(config.serverUrl, config.watchPath);
-        console.log(
-            chalk.green(
-                `MSE-Sync client started. Watching: ${config.watchPath}`
-            )
-        );
-    });
+    .description("Start P2P MSE sync client")
+    .requiredOption("-p, --port <number>", "Port to listen on")
+    .requiredOption("-w, --watch <path>", "Path to watch for MSE files")
+    .option(
+        "-c, --connect <peers>",
+        "Comma-separated list of peers to connect to (format: ip:port)"
+    )
+    .action(async (options) => {
+        const port = parseInt(options.port);
+        const watchPath = options.watch;
 
-program
-    .command("server")
-    .description("Start MSE-Sync server")
-    .action(() => {
-        new SyncServer();
+        console.log(chalk.blue("Starting P2P MSE sync client..."));
+        console.log(chalk.blue(`Port: ${port}`));
+        console.log(chalk.blue(`Watch path: ${watchPath}`));
+
+        const client = new P2PClient(port, watchPath);
+
+        if (options.connect) {
+            const peers = options.connect.split(",");
+            for (const peer of peers) {
+                const [address, port] = peer.split(":");
+                if (address && port) {
+                    await client.connectToPeer(address, parseInt(port));
+                }
+            }
+        }
+
+        process.on("SIGINT", () => {
+            console.log(chalk.yellow("\nShutting down..."));
+            client.close();
+            process.exit(0);
+        });
     });
 
 program.parse();

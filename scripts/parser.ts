@@ -15,7 +15,7 @@ export class MSEParser {
     static async parseFile(filePath: string): Promise<MSECard[]> {
         const content = await readFile(filePath);
         const zip = await JSZip.loadAsync(content);
-        const setFile = zip.file("set");
+        const setFile = zip.file("set") || zip.file("mse-set");
 
         if (!setFile) {
             throw new Error("Invalid MSE set file: missing set file");
@@ -65,9 +65,68 @@ export class MSEParser {
         };
     }
 
+    static serialize(cards: MSECard[]): string {
+        let content = "mse version: 0.3.8\ngame: magic\nstylesheet: m15\n\n";
+
+        for (const card of cards) {
+            content += this.serializeCard(card);
+        }
+
+        return content;
+    }
+
+    private static serializeCard(card: MSECard): string {
+        let cardContent = "card:\n";
+
+        // Ensure core fields are serialized first
+        cardContent += `\tcard_id: ${card.id}\n`;
+        cardContent += `\tname: ${card.name}\n`;
+
+        if (card.style) {
+            cardContent += `\tstyling: ${card.style}\n`;
+        }
+
+        if (card.notes) {
+            cardContent += `\tnotes: ${card.notes}\n`;
+        }
+
+        // Serialize all other fields except those we handle specially
+        const skipFields = [
+            "id",
+            "name",
+            "style",
+            "styling",
+            "notes",
+            "timestamp",
+        ];
+        for (const [key, value] of Object.entries(card)) {
+            if (
+                !skipFields.includes(key) &&
+                value !== undefined &&
+                value !== ""
+            ) {
+                cardContent += `\t${key}: ${value}\n`;
+            }
+        }
+
+        return cardContent;
+    }
+
     static async buildSetFile(cards: MSECard[]): Promise<Buffer> {
-        // Implementation for rebuilding MSE set file
-        // This would require detailed knowledge of the MSE file format
-        throw new Error("Not implemented");
+        const zip = new JSZip();
+        const setContent = this.serialize(cards);
+
+        // Add the set content to the zip file
+        if (zip.file("mse-set")) zip.file("mse-set", setContent);
+        else zip.file("set", setContent);
+
+        // Generate the zip buffer
+        return zip.generateAsync({
+            type: "nodebuffer",
+            compression: "DEFLATE",
+            compressionOptions: {
+                level: 9,
+            },
+        });
     }
 }

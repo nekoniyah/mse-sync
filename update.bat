@@ -1,1 +1,0 @@
-bun i -g mse-sync@latest
